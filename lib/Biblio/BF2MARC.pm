@@ -4,6 +4,7 @@ use 5.010000;
 use strict;
 use warnings;
 use Carp qw(carp croak);
+use Data::Dumper;
 
 =head1 NAME
 
@@ -31,6 +32,7 @@ our $VERSION = '0.01_01';
     $parser->parse_file_into_model(undef, 'bibframe.xml', $model);
 
     # instantiate a BF2MARC converter
+    # pass in the model
     my $bf2marc = Biblio::BF2MARC->new($model);
 
     # return BIBFRAME descriptions as an arrayref
@@ -92,35 +94,286 @@ use RDF::Query;
 use XML::LibXML;
 use XML::LibXSLT;
 use File::ShareDir;
+use Biblio::BF2MARC::Description;
+
+# Convenience variables
+my %namespaces = (
+                  'rdf' => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+                  'rdfs' => 'http://www.w3.org/2000/01/rdf-schema#',
+                  'bf' => 'http://id.loc.gov/ontologies/bibframe/',
+                  'bflc' => 'http://id.loc.gov/ontologies/bflc/',
+                  'madsrdf' => 'http://www.loc.gov/mads/rdf/v1#'
+                 );
+my %rev_namespaces = reverse(%namespaces);
 
 =head1 SUBROUTINES/METHODS
 
 =head2 new
 
+    $bf2marc = Biblio::BF2MARC->new($model);
+
+Constructor for BF2MARC converter. Can take an L<RDF::Trine::Model> as
+the single parameter, or the model can be set later using the
+C<<model>> accessor. Will return croak if the model parameter is
+not an L<RDF::Trine::Model> object.
+
 =cut
 
 sub new {
+    my $inv = shift;
+    my $class = ref($inv) || $inv;
+    my $self = {};
+    bless($self, $class);
+    my $model = shift;
+    if ($model) {
+        $self->model($model);
+    }
+    return $self;
+}
+
+=head2 model
+
+    $model = $bf2marc->model;
+    $bf2marc->model($model);
+
+Set or get the RDF::Trine::Model for the converter. Returns the model.
+Will croak if the model is not an L<RDF::Trine::Model> object.
+
+=cut
+
+sub model {
+    my ($self, $model) = @_;
+    if ($model) {
+        $model->isa('RDF::Trine::Model') || croak 'Unrecognized model type ' . ref($model);
+        $$self{model} = $model;
+    }
+    return $$self{model};
 }
 
 =head2 descriptions
 
+    $descriptions = $bf2marc->descriptions
+
+Returns the BIBFRAME descriptions in the model as an array
+reference. A BIBFRAME description is defined as a pair of bf:Work and
+bf:Instance nodes that refer to one another. Each entry in the array
+reference is a L<Biblio::BF2MARC::Description> object.
+
+If there are no BIBFRAME descriptions in the model, returns an empty
+array reference.
+
+This method will return only resource nodes (not blank nodes).
+
 =cut
 
 sub descriptions {
+    my $self = shift;
+
+    my $sparql = <<'END';
+PREFIX bf: <http://id.loc.gov/ontologies/bibframe/>
+
+SELECT DISTINCT ?work ?instance
+WHERE
+{
+  { ?work bf:hasInstance ?instance } UNION { ?instance bf:instanceOf ?work }
+}
+END
+    my $query = RDF::Query->new($sparql);
+    my $query_iterator = $query->execute($self->model);
+    my $descriptions = [];
+    while (my $result = $query_iterator->next) {
+        if ($$result{work}->is_resource && $$result{instance}->is_resource) {
+            my $description = Biblio::BF2MARC::Description->new(
+                work => $$result{work},
+                instance => $$result{instance}
+            );
+            push(@{$descriptions}, $description);
+        }
+    }
+    return $descriptions;
 }
 
 =head2 to_striped_xml
 
+   $xml = $bf2marc->to_striped_xml($description);
+
+Returns an L<XML::LibXML::Document> object that is a striped RDF/XML
+representation of a L<Biblio::BF2MARC::Description>, constructed from the
+model in the BF2MARC converter object.
+
+The nodes in the description must be L<RDF::Trine::Node::Resource> objects.
+
 =cut
 
 sub to_striped_xml {
+    my $self = shift;
+    my $description = shift;
+    $description || croak 'No description passed to method';
+    $description->isa('Biblio::BF2MARC::Description') || croak 'Invalid parameter type for description: ' . ref($description);
+    unless ($description->work->is_resource) {
+        carp "Work node in description is not a resource";
+        return undef;
+    }
+    unless ($description->instance->is_resource) {
+        carp "Instance node in description is not a resource";
+        return undef;
+    }
+    my $xml = XML::LibXML::Document->new();
+    my $rdf = $xml->createElement('RDF');
+    while (my ($prefix, $uri) = each(%namespaces)) {
+        if ($prefix eq 'rdf') {
+            $rdf->setNamespace($namespaces{rdf}, 'rdf');
+        } else {
+            $rdf->setNamespace($uri, $prefix, 0);
+        }
+    }
+    $xml->setDocumentElement($rdf);
+
+    my $work = XML::LibXML::Element->new('Work');
+    $work->setNamespace($namespaces{bf}, 'bf');
+    $work->setNamespace($namespaces{rdf}, 'rdf', 0);
+    $work->setAttributeNS($namespaces{rdf}, 'rdf:about', $description->work->uri);
+    $rdf->appendChild($work);
+
+    my $instance = XML::LibXML::Element->new('Instance');
+    $instance->setNamespace($namespaces{bf}, 'bf');
+    $instance->setNamespace($namespaces{rdf}, 'rdf', 0);
+    $instance->setAttributeNS($namespaces{rdf}, 'rdf:about', $description->instance->uri);
+    $rdf->appendChild($instance);
+
+    return $xml;
 }
 
-=head2 convert
+=head2 convert B<not yet implemented>
+
+   my $marcxml = $bf2marc->convert($striped_xml);
+
+Takes an L<XML::LibXML::Document> containing a striped RDF/XML
+representation of a BIBFRAME description. Returns a
+L<XML::LibXML::Document> object transformed by a conversion XSLT
+stylesheet to a MARCXML document.
 
 =cut
 
 sub convert {
+    carp('No-op: not yet implemented');
+}
+
+=head1 INTERNAL METHODS
+
+=head2 _build_XML_element
+
+    my $element = $self->_build_XML_element($node);
+
+Build an L<XML::LibXML::Element> object from an L<RDF::Trine::Node>
+object. If the qname of the node is part of the internal %namespaces
+hash, the element namespace and prefix will be set.
+
+=cut
+
+sub _build_XML_element {
+    my ($self, $node) = @_;
+    $node || croak 'No node passed to method';
+    $node->isa('RDF::Trine::Node') || croak "Invalid parameter type for node: " . ref($node);
+    my ($element, $namespace, $name);
+    eval { ($namespace, $name) = $node->qname };
+    if ($@) {
+        croak "Can't create RDF/XML for node " .
+          $node->as_string() .
+          ", resource namespace can't be determined: $@";
+    }
+    if ($rev_namespaces{$namespace}) {
+        $element = XML::LibXML::Element->new($name);
+        $element->setNamespace($namespace,$rev_namespaces{$namespace});
+    }
+    return $element;
+}
+
+=head2 _build_property
+
+    my $element = $self->_build_property($statement);
+
+Build an L<XML::LibXML::Element> object from the predicate and object
+of an L<RDF::Trine::Statement> object. Used to create stripes in an
+RDF/XML document.
+
+This method walks the graph of the model and retrieves statements
+about the object if the object is not a literal, and calls itself to
+continue to add on stripes to the element. A recursion check
+is in place to ensure that stripes cannot go infinitely deep.
+
+=cut
+
+sub _build_property {
+    my ($self, $st, @subjects) = @_;
+    $st || croak 'No statement passed to method';
+    $st->isa('RDF::Trine::Statement') || croak 'Invalid parameter type for property: ' . ref($st);
+    push(@subjects, $st->subject);
+    my $property = $self->_build_XML_element($st->predicate);
+    if ($st->object->is_literal) {
+        # TODO: deal with datatypes and language
+        $property->appendTextNode($st->object->literal_value);
+    } elsif ($st->object->is_resource ||
+             $st->object->is_blank) {
+        my $props = $self->model->get_statements($st->object);
+        $props = $props->unique;
+        my $props_mater = $props->materialize;
+        if ($props_mater->length > 0) {
+            my @types = $self->model->objects($st->object, RDF::Trine::iri($namespaces{rdf} . 'type'));
+            if (@types) {
+                my $stripe;
+                for (my $i = 0; $i < @types; $i++) {
+                    if ($i == 0) {
+                        $stripe = $self->_build_XML_element($types[$i]);
+                        if ($st->object->is_resource) {
+                            $stripe->setNamespace($namespaces{rdf}, 'rdf', 0);
+                            $stripe->setAttributeNS($namespaces{rdf}, 'rdf:about', $st->object->uri);
+                        }
+                    } else {
+                        my $type = $self->_build_XML_element(RDF::Trine::iri($namespaces{rdf} . 'type'));
+                        $type->setAttributeNS($namespaces{rdf}, 'rdf:resource', $types[$i]->uri);
+                        $stripe->addChild($type);
+                    }
+                }
+                while (my $prop_st = $props_mater->next) {
+                    my $self_referencing;
+                    foreach my $i (@subjects) {
+                        if ($prop_st->object->equal($i)) {
+                            $self_referencing = 1;
+                            last;
+                        }
+                    }
+                    if ($prop_st->predicate->equal(RDF::Trine::iri($namespaces{rdf} . 'type'))) {
+                        next;
+                    } elsif ($self_referencing) {
+                        my $self_ref = $self->_build_XML_element($prop_st->predicate);
+                        $self_ref->setNamespace($namespaces{rdf}, 'rdf', 0);
+                        $self_ref->setAttributeNS($namespaces{rdf}, 'rdf:resource', $prop_st->object->uri);
+                        $stripe->addChild($self_ref);
+                    } else {
+                        $stripe->addChild($self->_build_property($prop_st, @subjects));
+                    }
+                }
+                $property->addChild($stripe);
+            } else {
+                carp "Can't create RDF/XML for statement " .
+                  $st->as_string .
+                  ": object has no rdf:type predicate in graph";
+            }
+        } else {
+            if ($st->object->is_resource) {
+                $property->setNamespace($namespaces{rdf}, 'rdf', 0);
+                $property->setAttributeNS($namespaces{rdf}, 'rdf:resource',$st->object->uri)
+            }
+        }
+    } else {
+        carp "Can't create RDF/XML for statement " .
+          $st->as_string() .
+          ": unknown node type for object.";
+        return undef;
+    }
+
+    return $property;
 }
 
 =head1 AUTHOR
