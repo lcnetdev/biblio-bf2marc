@@ -302,6 +302,9 @@ about the object if the object is not a literal, and calls itself to
 continue to add on stripes to the element. A recursion check
 is in place to ensure that stripes cannot go infinitely deep.
 
+Literal objects add attributes to the property for C<<xml:lang>>
+and C<<rdf:datatype>>, if appropriate.
+
 =cut
 
 sub _build_property {
@@ -311,7 +314,17 @@ sub _build_property {
     push(@subjects, $st->subject);
     my $property = $self->_build_XML_element($st->predicate);
     if ($st->object->is_literal) {
-        # TODO: deal with datatypes and language
+        if ($st->object->has_language) {
+            $property->setAttribute('xml:lang',$st->object->literal_value_language);
+        }
+        if ($st->object->has_datatype) {
+            $property->setNamespace('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'rdf', 0);
+            $property->setAttributeNS(
+                                      'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+                                      'datatype',
+                                      $st->object->literal_datatype
+                                     );
+        }
         $property->appendTextNode($st->object->literal_value);
     } elsif ($st->object->is_resource ||
              $st->object->is_blank) {

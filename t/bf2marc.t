@@ -72,12 +72,26 @@ my $literal_prop = $bf2marc->_build_property($statement);
 isa_ok( $literal_prop, 'XML::LibXML::Element', 'test property element object' );
 is( $literal_prop->textContent, 'Snoopy on wheels /', 'literal property value' );
 
-TODO: {
-    local $TODO = 'Set up tests for literal datatype and language';
+$statement = RDF::Trine::Statement->new(
+                                        RDF::Trine::iri('http://example.org/12345'),
+                                        RDF::Trine::iri('http://id.loc.gov/ontologies/bibframe/creationDate'),
+                                        RDF::Trine::literal('2004-05-20', undef, 'http://www.w3.org/2001/XMLSchema#date')
+                                       );
+$literal_prop = $bf2marc->_build_property($statement);
+diag $literal_prop->toString;
+is(
+   $literal_prop->getAttribute('rdf:datatype'),
+   'http://www.w3.org/2001/XMLSchema#date',
+   'literal with datatype sets rdf:datatype'
+  );
 
-    ok(0, 'set datatype on literal');
-    ok(0, 'set language on literal');
-};
+$statement = RDF::Trine::Statement->new(
+                                        RDF::Trine::iri('http://example.org/12345'),
+                                        RDF::Trine::iri('http://www.w3.org/2000/01/rdf-schema#label'),
+                                        RDF::Trine::literal('Snoopy auf Raedern', 'de')
+                                       );
+$literal_prop = $bf2marc->_build_property($statement);
+is( $literal_prop->getAttribute('xml:lang'), 'de', 'literal with language sets xml:lang' );
 
 $statement = RDF::Trine::Statement->new(
                                         RDF::Trine::iri('http://example.org/12345'),
@@ -105,7 +119,7 @@ $statement = RDF::Trine::Statement->new(
 my $recursive_prop = $bf2marc->_build_property($statement);
 
 TODO: {
-    local $TODO = 'Set up tests to dereferences madsrdf IRIs';
+    local $TODO = 'Set up tests for dereferencing madsrdf IRIs';
 
     ok(0, 'dereference madsrdf IRI');
 };
