@@ -271,18 +271,52 @@ sub to_striped_xml {
     $work->setNamespace($namespaces{bf}, 'bf');
     $work->setNamespace($namespaces{rdf}, 'rdf', 0);
     $work->setAttributeNS($namespaces{rdf}, 'rdf:about', $description->work->uri);
+    my $work_properties = $self->model->get_statements($description->work);
+    $work_properties->unique;
+    while (my $st = $work_properties->next) {
+        if ($st->predicate->equal(RDF::Trine::iri($namespaces{rdf} . 'type')) &&
+            $st->object->equal(RDF::Trine::iri($namespaces{bf} . 'Work'))) {
+            next;
+        } elsif ($st->predicate->equal(RDF::Trine::iri($namespaces{bf} . 'hasInstance')) &&
+                 $st->object->equal($description->instance)) {
+            my $has_instance = XML::LibXML::Element->new('hasInstance');
+            $has_instance->setNamespace($namespaces{bf}, 'bf');
+            $has_instance->setNamespace($namespaces{rdf}, 'rdf', 0);
+            $has_instance->setAttributeNS($namespaces{rdf}, 'rdf:resource', $description->instance->uri);
+            $work->appendChild($has_instance);
+        } else {
+            $work->appendChild($self->_build_property($st));
+        }
+    }
     $rdf->appendChild($work);
 
     my $instance = XML::LibXML::Element->new('Instance');
     $instance->setNamespace($namespaces{bf}, 'bf');
     $instance->setNamespace($namespaces{rdf}, 'rdf', 0);
     $instance->setAttributeNS($namespaces{rdf}, 'rdf:about', $description->instance->uri);
+    my $instance_properties = $self->model->get_statements($description->instance);
+    $instance_properties->unique;
+    while (my $st = $instance_properties->next) {
+        if ($st->predicate->equal(RDF::Trine::iri($namespaces{rdf} . 'type')) &&
+            $st->object->equal(RDF::Trine::iri($namespaces{bf} . 'Instance'))) {
+            next;
+        } elsif ($st->predicate->equal(RDF::Trine::iri($namespaces{bf} . 'instanceOf')) &&
+                 $st->object->equal($description->work)) {
+            my $instance_of = XML::LibXML::Element->new('instance_of');
+            $instance_of->setNamespace($namespaces{bf}, 'bf');
+            $instance_of->setNamespace($namespaces{rdf}, 'rdf', 0);
+            $instance_of->setAttributeNS($namespaces{rdf}, 'rdf:resource', $description->work->uri);
+            $instance->appendChild($instance_of);
+        } else {
+            $instance->appendChild($self->_build_property($st));
+        }
+    }
     $rdf->appendChild($instance);
 
     return $xml;
 }
 
-=head2 convert B<not yet implemented>
+=head2 convert
 
    my $marcxml = $bf2marc->convert($striped_xml);
 
@@ -294,7 +328,13 @@ stylesheet to a MARCXML document.
 =cut
 
 sub convert {
-    carp('No-op: not yet implemented');
+    my ($self, $description) = @_;
+    my $output = eval { $$self{stylesheet}->transform($description) };
+    if ($@) {
+        carp "Conversion failed: $@";
+    } else {
+        return $output;
+    }
 }
 
 =head1 INTERNAL METHODS

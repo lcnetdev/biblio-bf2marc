@@ -1,5 +1,5 @@
 #!perl -T
-use Test::More tests => 21;
+use Test::More tests => 23;
 
 use 5.01;
 use strict;
@@ -51,6 +51,7 @@ END
 is( eval { $bf2marc->stylesheet($style_doc) }, 1, 'set stylesheet' );
 
 # Descriptions
+$bf2marc = Biblio::BF2MARC->new($model);
 my $descriptions = $bf2marc->descriptions;
 is( @{$descriptions}, 2, 'retrieve descriptions from model' );
 isa_ok( $$descriptions[0], 'Biblio::BF2MARC::Description', 'test description object' );
@@ -147,10 +148,14 @@ my $work_list = $xpc->findnodes('/rdf:RDF/bf:Work');
 my $instance_list = $xpc->findnodes('/rdf:RDF/bf:Instance');
 is ($work_list->size(), 1, 'single top-level bf:Work');
 is ($instance_list->size(), 1, 'single top-level bf:Instance');
+is (
+    $xpc->findvalue('/rdf:RDF/bf:Work/bf:adminMetadata/bf:AdminMetadata/bf:identifiedBy/bf:Local/rdf:value'),
+    '13600108',
+    'striped path to property'
+   );
 
-# XSLT processing
-TODO: {
-    local $TODO = 'Set up tests for XSLT processing of striped RDF/XML';
-
-    ok(0, 'test MARCXML object');
-};
+# XSLT processing - convert to MARCXML
+my $marcxml = $bf2marc->convert($xml);
+isa_ok( $marcxml, 'XML::LibXML::Document', 'test MARCXML object' );
+my $record = $marcxml->documentElement;
+is( $record->nodeName, 'marc:record', 'MARCXML record generation' );
