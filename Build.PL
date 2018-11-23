@@ -22,9 +22,9 @@ my $builder = Module::Build->new(
         'RDF::Query' => '2.9',
         'XML::LibXSLT' => '1.85',
         'XML::LibXML' => '2',
-        'File::ShareDir' => '0'
+        'File::Share' => '0'
     },
-    add_to_cleanup     => [ 'Biblio-BF2MARC-*', 'lib/Biblio/BF2MARC/bibframe2marc.xsl' ],
+    share_dir => 'share',
+    add_to_cleanup     => [ 'Biblio-BF2MARC-*', 'lib/Biblio/BF2MARC/bibframe2marc.xsl' ]
 );
-$builder->add_build_element('xsl');
 $builder->create_build_script();

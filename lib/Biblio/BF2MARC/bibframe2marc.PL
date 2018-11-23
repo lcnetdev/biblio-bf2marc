@@ -8,7 +8,7 @@ use XML::LibXSLT;
 
 my $rules_path = 'xsl/rules';
 my $compiler_path = 'xsl/src/compile.xsl';
-my $output = 'lib/Biblio/BF2MARC/bibframe2marc.xsl';
+my $output = 'share/bibframe2marc.xsl';
 
 # Set up the top-level rules document
 my $rules_version;

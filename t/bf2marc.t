@@ -1,5 +1,5 @@
 #!perl -T
-use Test::More tests => 19;
+use Test::More tests => 21;
 
 use 5.01;
 use strict;
@@ -7,6 +7,7 @@ use warnings;
 
 use Biblio::BF2MARC;
 use RDF::Trine;
+use XML::LibXML;
 
 # Set up the model
 my $model = RDF::Trine::Model->temporary_model;
@@ -20,6 +21,11 @@ my $bf2marc;
 
 # Object creation
 $bf2marc = new_ok('Biblio::BF2MARC');
+isa_ok(
+       $$bf2marc{stylesheet},
+       'XML::LibXSLT::StylesheetWrapper',
+       'test converter stylesheet'
+      );
 
 # Object create with non-model should croak
 eval { $bf2marc = new Biblio::BF2MARC ('oops') };
@@ -37,6 +43,12 @@ is_deeply( $model, $bf2marc->model, 'set model' );
 # Object create with model argument
 $bf2marc = Biblio::BF2MARC->new($model);
 is_deeply( $model, $bf2marc->model, 'create object with model' );
+
+# Set the stylesheet manually
+my $style_doc = XML::LibXML->load_xml(string => <<'END');
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0"/>
+END
+is( eval { $bf2marc->stylesheet($style_doc) }, 1, 'set stylesheet' );
 
 # Descriptions
 my $descriptions = $bf2marc->descriptions;
@@ -78,7 +90,6 @@ $statement = RDF::Trine::Statement->new(
                                         RDF::Trine::literal('2004-05-20', undef, 'http://www.w3.org/2001/XMLSchema#date')
                                        );
 $literal_prop = $bf2marc->_build_property($statement);
-diag $literal_prop->toString;
 is(
    $literal_prop->getAttribute('rdf:datatype'),
    'http://www.w3.org/2001/XMLSchema#date',

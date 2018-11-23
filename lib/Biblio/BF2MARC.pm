@@ -35,6 +35,11 @@ our $VERSION = '0.01_01';
     # pass in the model
     my $bf2marc = Biblio::BF2MARC->new($model);
 
+    # point the converter at your own custom stylesheet, rather than
+    # using the one included
+    my $style_doc = XML::LibXML->load_xml( location => 'my-bf2marc.xsl', no_cdata => 1 );
+    $bf2marc->stylesheet($style_doc);
+
     # return BIBFRAME descriptions as an arrayref
     # each entry represents a BIBFRAME description (work + instance)
     my $descriptions = $bf2marc->descriptions;
@@ -93,7 +98,7 @@ use RDF::Trine;
 use RDF::Query;
 use XML::LibXML;
 use XML::LibXSLT;
-use File::ShareDir;
+use File::Share qw(:all);
 use Biblio::BF2MARC::Description;
 
 # Convenience variables
@@ -114,19 +119,35 @@ my %rev_namespaces = reverse(%namespaces);
 
 Constructor for BF2MARC converter. Can take an L<RDF::Trine::Model> as
 the single parameter, or the model can be set later using the
-C<<model>> accessor. Will return croak if the model parameter is
-not an L<RDF::Trine::Model> object.
+C<<model>> accessor. Will croak if the model parameter is not an
+L<RDF::Trine::Model> object.
+
+The constructor will attempt to set the converter stylesheet to the
+default bibframe2marc.xsl in the module directory. If the stylesheet
+can't be loaded, it log a warning, and the object will be returned
+without a stylesheet property. The stylesheet can also be set manually
+using the C<<stylesheet>> method.
 
 =cut
 
 sub new {
     my $inv = shift;
     my $class = ref($inv) || $inv;
-    my $self = {};
+    my $self = {
+                xslt => XML::LibXSLT->new()
+               };
     bless($self, $class);
     my $model = shift;
     if ($model) {
         $self->model($model);
+    }
+    my $stylesheet_file = dist_file(__PACKAGE__,'bibframe2marc.xsl');
+    if (-r $stylesheet_file) {
+        my $style_doc = eval { XML::LibXML->load_xml( location => $stylesheet_file, no_cdata => 1 ) };
+        warn "Unable to load default stylesheet $stylesheet_file: $@" if $@;
+        $self->stylesheet($style_doc) if $style_doc;
+    } else {
+        warn "Unable to load default stylesheet $stylesheet_file, file not readable";
     }
     return $self;
 }
@@ -148,6 +169,23 @@ sub model {
         $$self{model} = $model;
     }
     return $$self{model};
+}
+
+=head2 stylesheet
+
+    $success= $bf2marc->stylesheet($style_doc);
+
+Set the stylesheet used for the BIBFRAME to MARC conversion from an
+L<XML::LibXML::Document> object. Will croak if unable to build the
+stylesheet.
+
+=cut
+
+sub stylesheet {
+    my ($self, $style_doc) = @_;
+    eval { $$self{stylesheet} = $$self{xslt}->parse_stylesheet($style_doc) };
+    if ($@) { croak $@ }
+    return 1;
 }
 
 =head2 descriptions
