@@ -27,6 +27,6 @@ my $builder = Module::Build->new(
         'List::Util' => '0'
     },
     share_dir => 'share',
-    add_to_cleanup     => [ 'Biblio-BF2MARC-*', 'lib/Biblio/BF2MARC/bibframe2marc.xsl' ]
+    add_to_cleanup     => [ 'Biblio-BF2MARC-*', 'share/bibframe2marc.xsl' ]
 );
 $builder->create_build_script();
