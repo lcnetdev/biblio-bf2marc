@@ -153,7 +153,7 @@ sub new {
     if ($model) {
         $self->model($model);
     }
-    my $stylesheet_file = dist_file(__PACKAGE__,'bibframe2marc.xsl');
+    my $stylesheet_file = dist_file('Biblio-BF2MARC','bibframe2marc.xsl');
     if (-r $stylesheet_file) {
         my $style_doc = eval { XML::LibXML->load_xml( location => $stylesheet_file, no_cdata => 1 ) };
         warn "Unable to load default stylesheet $stylesheet_file: $@" if $@;
