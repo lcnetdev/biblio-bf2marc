@@ -48,7 +48,17 @@ our $VERSION = '0.01_01';
     # (XML::LibXML::Document objects for XSLT conversion)
     my @striped_descriptions;
     foreach my $description (@{$descriptions}) {
-        push(@striped_descriptions, $bf2marc->to_striped_xml($description));
+        push(
+          @striped_descriptions,
+          $bf2marc->to_striped_xml(
+            $description,
+            { dereference => {
+                'http://id.loc.gov/ontologies/bibframe/Agent' =>
+                  ['http://id.loc.gov']
+              }
+            }
+          )
+        );
     }
 
     # convert striped descriptions to MARCXML (XML::LibXML::Document objects)
@@ -98,6 +108,7 @@ use RDF::Trine;
 use RDF::Query;
 use XML::LibXML;
 use XML::LibXSLT;
+use List::Util qw(none);
 use File::Share qw(:all);
 use Biblio::BF2MARC::Description;
 
@@ -134,7 +145,8 @@ sub new {
     my $inv = shift;
     my $class = ref($inv) || $inv;
     my $self = {
-                xslt => XML::LibXSLT->new()
+                xslt => XML::LibXSLT->new(),
+                dereferenced => [ ]
                };
     bless($self, $class);
     my $model = shift;
@@ -166,6 +178,7 @@ sub model {
     my ($self, $model) = @_;
     if ($model) {
         $model->isa('RDF::Trine::Model') || croak 'Unrecognized model type ' . ref($model);
+        $$self{dereferenced} = [ ];
         $$self{model} = $model;
     }
     return $$self{model};
@@ -233,13 +246,25 @@ END
 
 =head2 to_striped_xml
 
-   $xml = $bf2marc->to_striped_xml($description);
+   $xml = $bf2marc->to_striped_xml($description, \%options);
 
 Returns an L<XML::LibXML::Document> object that is a striped RDF/XML
-representation of a L<Biblio::BF2MARC::Description>, constructed from the
-model in the BF2MARC converter object.
+representation of a L<Biblio::BF2MARC::Description>, constructed from
+the model in the BF2MARC converter object.
 
-The nodes in the description must be L<RDF::Trine::Node::Resource> objects.
+The nodes in the description must be L<RDF::Trine::Node::Resource>
+objects.
+
+=head3 options (hashref)
+
+=over 4
+
+=item * C<<dereference => \%classes>>: A hashref of classes with the
+class IRI as key and an arrayref of URL prefixes as the value which
+should be dereferenced by URI and their retrieved properties added to
+the element. The default behavior is not to dereference any URIs.
+
+=back
 
 =cut
 
@@ -360,16 +385,19 @@ sub _build_XML_element {
           $node->as_string() .
           ", resource namespace can't be determined: $@";
     }
+    $element = XML::LibXML::Element->new($name);
     if ($rev_namespaces{$namespace}) {
-        $element = XML::LibXML::Element->new($name);
         $element->setNamespace($namespace,$rev_namespaces{$namespace});
+    } else {
+        $element->setNamespace($namespace);
     }
+
     return $element;
 }
 
 =head2 _build_property
 
-    my $element = $self->_build_property($statement);
+    my $element = $self->_build_property($statement, \%options);
 
 Build an L<XML::LibXML::Element> object from the predicate and object
 of an L<RDF::Trine::Statement> object. Used to create stripes in an
@@ -383,12 +411,43 @@ is in place to ensure that stripes cannot go infinitely deep.
 Literal objects add attributes to the property for C<<xml:lang>>
 and C<<rdf:datatype>>, if appropriate.
 
+Will croak with invalid option format, carp with unknown option.
+
+=head3 options (hashref)
+
+=over 4
+
+=item * C<<dereference => \%classes>>: A hashref of classes with the
+class IRI as key and an arrayref of URL prefixes as the value which
+should be dereferenced by URI and their retrieved properties added to
+the element. The default behavior is not to dereference any URIs.
+
+=back
+
 =cut
 
 sub _build_property {
-    my ($self, $st, @subjects) = @_;
+    my ($self, $st, $options, @subjects) = @_;
     $st || croak 'No statement passed to method';
     $st->isa('RDF::Trine::Statement') || croak 'Invalid parameter type for property: ' . ref($st);
+    my $dereference;
+    if ($options) {
+        if (ref($options) eq 'HASH') {
+            while (my ($option, $value) = each(%{$options})) {
+                if ($option eq 'dereference') {
+                    if (ref($value) eq 'HASH') {
+                        $dereference = $value;
+                    } else {
+                        carp 'Invalid format for dereference option (must be hashref)';
+                    }
+                } else {
+                    carp "Unknown option $option";
+                }
+            }
+        } else {
+            croak 'Invalid format for options (must be hashref)';
+        }
+    }
     push(@subjects, $st->subject);
     my $property = $self->_build_XML_element($st->predicate);
     if ($st->object->is_literal) {
@@ -406,19 +465,87 @@ sub _build_property {
         $property->appendTextNode($st->object->literal_value);
     } elsif ($st->object->is_resource ||
              $st->object->is_blank) {
-        my $props = $self->model->get_statements($st->object);
-        $props = $props->unique;
-        my $props_mater = $props->materialize;
-        if ($props_mater->length > 0) {
-            my @types = $self->model->objects($st->object, RDF::Trine::iri($namespaces{rdf} . 'type'));
+
+        # Build the node list to process
+        # If the object is an rdf:List, there may be multiples
+        # Otherwise the list is just the object
+        my @node_list;
+        my @collection = $self->model->objects($st->object, RDF::Trine::iri($namespaces{rdf} . 'first'));
+        my @rest = $self->model->objects($st->object, RDF::Trine::iri($namespaces{rdf} . 'rest'));
+        if (@collection) {
+            # For collections, set the rdf:parseType attribute on the property
+            $property->setAttributeNS($namespaces{rdf}, 'rdf:parseType', 'Collection');
+            foreach my $node (@collection) {
+                unless (
+                        $node->is_nil ||
+                        ($node->is_resource && $node->uri eq 'http://www.w3.org/1999/02/22-rdf-syntax-ns#nil')
+                       ) {
+                    push(@node_list, $node);
+                }
+            }
+            # Process the rest of the rdf:List, if it's there
+            while (my $node = shift(@rest)) {
+                unless (
+                        $node->is_nil ||
+                        ($node->is_resource && $node->uri eq 'http://www.w3.org/1999/02/22-rdf-syntax-ns#nil')
+                       ) {
+                    push(@node_list, $self->model->objects($node, RDF::Trine::iri($namespaces{rdf} . 'first')));
+                    push(@rest, $self->model->objects($node, RDF::Trine::iri($namespaces{rdf} . 'rest')));
+                }
+            }
+        } else {
+            @node_list = ($st->object);
+        }
+
+        # Process the node list
+        # Create a stripe for each node
+        foreach my $node (@node_list) {
+            my $stripe;
+
+            # Get object classes in model
+            my @types = $self->model->objects($node, RDF::Trine::iri($namespaces{rdf} . 'type'));
+
+            # dereference resources, add to model
+            if ($dereference && $node->is_resource) {
+                while (my ($class, $prefixes) = each(%{$dereference})) {
+                    foreach my $type (@types) {
+                        if (
+                            $type->is_resource &&
+                            ($type->uri eq $class) &&
+                            (none { $_ eq $node->uri } @{$$self{dereferenced}})
+                           ) {
+                            foreach my $prefix (@{$prefixes}) {
+                                if ($node->uri =~ /^$prefix/) {
+                                    RDF::Trine::Parser->parse_url_into_model($node->uri, $self->model);
+                                    push(@{$$self{dereferenced}}, $node->uri);
+                                    last;
+                                }
+                            }
+                        }
+                    }
+                }
+                # Update types array with new data if available
+                my @types_upd = $self->model->objects($node, RDF::Trine::iri($namespaces{rdf} . 'type'));
+                foreach my $type (@types_upd) {
+                    my $match = 0;
+                    foreach my $type_o (@types) {
+                        if ($type->equal($type_o)) {
+                            $match = 1;
+                            last;
+                        }
+                    }
+                    push(@types,$type) unless $match;
+                }
+            }
+
+            # Build the XML element for the stripe
             if (@types) {
-                my $stripe;
                 for (my $i = 0; $i < @types; $i++) {
                     if ($i == 0) {
                         $stripe = $self->_build_XML_element($types[$i]);
-                        if ($st->object->is_resource) {
+                        if ($node->is_resource) {
                             $stripe->setNamespace($namespaces{rdf}, 'rdf', 0);
-                            $stripe->setAttributeNS($namespaces{rdf}, 'rdf:about', $st->object->uri);
+                            $stripe->setAttributeNS($namespaces{rdf}, 'rdf:about', $node->uri);
                         }
                     } else {
                         my $type = $self->_build_XML_element(RDF::Trine::iri($namespaces{rdf} . 'type'));
@@ -426,6 +553,15 @@ sub _build_property {
                         $stripe->addChild($type);
                     }
                 }
+            } else {
+                $stripe = $self->_build_XML_element(RDF::Trine::iri($namespaces{rdf} . 'Description'));
+            }
+
+            # Attach properties to the stripe
+            my $props = $self->model->get_statements($node);
+            $props = $props->unique;
+            my $props_mater = $props->materialize;
+            if ($props_mater->length > 0) {
                 while (my $prop_st = $props_mater->next) {
                     my $self_referencing;
                     foreach my $i (@subjects) {
@@ -442,19 +578,15 @@ sub _build_property {
                         $self_ref->setAttributeNS($namespaces{rdf}, 'rdf:resource', $prop_st->object->uri);
                         $stripe->addChild($self_ref);
                     } else {
-                        $stripe->addChild($self->_build_property($prop_st, @subjects));
+                        $stripe->addChild($self->_build_property($prop_st, $options, @subjects));
                     }
                 }
                 $property->addChild($stripe);
             } else {
-                carp "Can't create RDF/XML for statement " .
-                  $st->as_string .
-                  ": object has no rdf:type predicate in graph";
-            }
-        } else {
-            if ($st->object->is_resource) {
-                $property->setNamespace($namespaces{rdf}, 'rdf', 0);
-                $property->setAttributeNS($namespaces{rdf}, 'rdf:resource',$st->object->uri)
+                if ($node->is_resource) {
+                    $property->setNamespace($namespaces{rdf}, 'rdf', 0);
+                    $property->setAttributeNS($namespaces{rdf}, 'rdf:resource',$node->uri)
+                }
             }
         }
     } else {

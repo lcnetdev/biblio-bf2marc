@@ -1,5 +1,5 @@
 #!perl -T
-use Test::More tests => 23;
+use Test::More tests => 24;
 
 use 5.01;
 use strict;
@@ -8,6 +8,7 @@ use warnings;
 use Biblio::BF2MARC;
 use RDF::Trine;
 use XML::LibXML;
+use Net::Ping;
 
 # Set up the model
 my $model = RDF::Trine::Model->temporary_model;
@@ -130,10 +131,42 @@ $statement = RDF::Trine::Statement->new(
                                        );
 my $recursive_prop = $bf2marc->_build_property($statement);
 
-TODO: {
-    local $TODO = 'Set up tests for dereferencing madsrdf IRIs';
+my $ua = RDF::Trine::default_useragent;
+my $test_id = $ua->get('http://id.loc.gov');
 
-    ok(0, 'dereference madsrdf IRI');
+SKIP: {
+    skip 'id.loc.gov service not available', 1 unless $test_id->is_success;
+
+    my $agent_statement = RDF::Trine::Statement->new(
+                                                     RDF::Trine::iri('http://id.loc.gov/authorities/names/n78095332'),
+                                                     RDF::Trine::iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'),
+                                                     RDF::Trine::iri('http://id.loc.gov/ontologies/bibframe/Agent')
+                                                    );
+    my $linked_statement = RDF::Trine::Statement->new(
+                                                      RDF::Trine::blank('12345'),
+                                                      RDF::Trine::iri('http://id.loc.gov/ontologies/bibframe/agent'),
+                                                      RDF::Trine::iri('http://id.loc.gov/authorities/names/n78095332')
+                                                     );
+    my $deref_model = RDF::Trine::Model->temporary_model;
+    $deref_model->add_statement($agent_statement);
+    $deref_model->add_statement($linked_statement);
+    my $deref_bf2marc = Biblio::BF2MARC->new($deref_model);
+    my $deref_prop = $deref_bf2marc->_build_property(
+                                                     $linked_statement,
+                                                     { dereference => {
+                                                                       'http://id.loc.gov/ontologies/bibframe/Agent' =>
+                                                                       ['http://id.loc.gov']
+                                                                      }
+                                                     }
+                                                    );
+    my $xpc = XML::LibXML::XPathContext->new($deref_prop);
+    $xpc->registerNs('bf', 'http://id.loc.gov/ontologies/bibframe/');
+    $xpc->registerNs('madsrdf', 'http://www.loc.gov/mads/rdf/v1#');
+    is(
+       $xpc->findvalue('bf:Agent/madsrdf:authoritativeLabel'),
+       'Shakespeare, William, 1564-1616',
+       'dereference madsrdf IRI'
+      );
 };
 
 # Striped RDF/XML
@@ -153,6 +186,18 @@ is (
     '13600108',
     'striped path to property'
    );
+
+TODO: {
+    local $TODO = 'dereferencing madsrdf IRIs in striped XML';
+
+    my $ua = RDF::Trine::default_useragent;
+    my $test_id = $ua->get('http://id.loc.gov');
+
+  SKIP: {
+        skip 'id.loc.gov service not available', 1 unless $test_id->is_success;
+        ok(0, 'dereference madsrdf IRI');
+    };
+};
 
 # XSLT processing - convert to MARCXML
 my $marcxml = $bf2marc->convert($xml);
