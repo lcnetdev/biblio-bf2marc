@@ -187,16 +187,29 @@ is (
     'striped path to property'
    );
 
-TODO: {
-    local $TODO = 'dereferencing madsrdf IRIs in striped XML';
-
-    my $ua = RDF::Trine::default_useragent;
-    my $test_id = $ua->get('http://id.loc.gov');
-
-  SKIP: {
-        skip 'id.loc.gov service not available', 1 unless $test_id->is_success;
-        ok(0, 'dereference madsrdf IRI');
-    };
+SKIP: {
+    skip 'id.loc.gov service not available', 1 unless $test_id->is_success;
+    my $xml = $bf2marc->to_striped_xml(
+                                       $descriptions{snoopy},
+                                       { dereference => {
+                                                         'http://id.loc.gov/ontologies/bibframe/Agent' =>
+                                                         ['http://id.loc.gov'],
+                                                         'http://id.loc.gov/ontologies/bibframe/Topic' =>
+                                                         ['http://id.loc.gov']
+                                                        }
+                                       }
+                                      );
+    my $xpc = XML::LibXML::XPathContext->new($xml);
+    $xpc->registerNs('bf', 'http://id.loc.gov/ontologies/bibframe/');
+    $xpc->registerNs('rdf', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#');
+    $xpc->registerNs('madsrdf', 'http://www.loc.gov/mads/rdf/v1#');
+    my $adminMetadata = $xpc->findnodes('//madsrdf:adminMetadata');
+    cmp_ok(
+           $adminMetadata->size,
+           '>',
+           0,
+           'dereference madsrdf IRI'
+          );
 };
 
 # XSLT processing - convert to MARCXML

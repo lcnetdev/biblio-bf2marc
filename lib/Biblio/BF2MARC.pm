@@ -281,6 +281,22 @@ sub to_striped_xml {
         carp "Instance node in description is not a resource";
         return undef;
     }
+    my $options = shift;
+    if ($options) {
+        if (ref($options) eq 'HASH') {
+            while (my ($option, $value) = each(%{$options})) {
+                if ($option eq 'dereference') {
+                    unless (ref($value) eq 'HASH') {
+                        croak 'Invalid format for dereference option (must be hashref)';
+                    }
+                } else {
+                    croak "Unknown option $option";
+                }
+            }
+        } else {
+            croak 'Invalid format for options (must be hashref)';
+        }
+    }
     my $xml = XML::LibXML::Document->new();
     my $rdf = $xml->createElement('RDF');
     while (my ($prefix, $uri) = each(%namespaces)) {
@@ -310,7 +326,7 @@ sub to_striped_xml {
             $has_instance->setAttributeNS($namespaces{rdf}, 'rdf:resource', $description->instance->uri);
             $work->appendChild($has_instance);
         } else {
-            $work->appendChild($self->_build_property($st));
+            $work->appendChild($self->_build_property($st,$options));
         }
     }
     $rdf->appendChild($work);
@@ -333,7 +349,7 @@ sub to_striped_xml {
             $instance_of->setAttributeNS($namespaces{rdf}, 'rdf:resource', $description->work->uri);
             $instance->appendChild($instance_of);
         } else {
-            $instance->appendChild($self->_build_property($st));
+            $instance->appendChild($self->_build_property($st,$options));
         }
     }
     $rdf->appendChild($instance);
