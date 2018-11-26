@@ -1,0 +1,132 @@
+#!perl
+
+use 5.010000;
+use strict;
+use warnings;
+
+=head1 NAME
+
+bibframe2marc - convert from BIBFRAME RDF to MARC using
+Biblio::BF2MARC.
+
+
+=head1 SYNOPSIS
+
+S<C<# Load an RDF/XML file from STDIN, write as MARCXML to STDOUT>>
+S<C<< bibframe2marc [B<--input> I<rdfxml> B<--output>
+I<marcxml>] < bibframe-rdf.xml > marc.xml >>>
+
+=head1 DEPENDENCIES
+
+=over 4
+
+=item L<Biblio::BF2MARC> (of which this script is a part)
+
+=item L<MARC::Record>
+
+=item L<MARC::File::XML>
+
+=item L<MARC::Record::MiJ>
+
+=back
+
+=cut
+
+BEGIN {
+  # These are required for the command line tool, but not for the
+  # Biblio::BF2MARC module
+  eval { require MARC::Record };
+  if ($@) {
+    die "MARC::Record module required!\n";
+  }
+  eval { require MARC::File::XML };
+  if ($@) {
+    die "MARC::File::XML module required!\n";
+  }
+  eval { require MARC::Record::MiJ };
+  if ($@) {
+    die "MARC::Record::MiJ module required!\n";
+  }
+}
+
+use Biblio::BF2MARC;
+use RDF::Trine;
+use XML::LibXML;
+use MARC::Record;
+use MARC::File::XML;
+use Getopt::Long;
+use Pod::Usage;
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<--help>
+
+Prints a brief help message and exits.
+
+=item B<--input> I<"input format">
+
+Set the input format of the incoming RDF graph. Required when loading
+data from STDIN or from a file. Possible values are I<rdfxml> (the
+default), I<turtle>, I<ntriples>, I<"RDF/JSON">, and I<trig>.
+
+=item B<--output> I<"output format">
+
+Set the output format for the MARC data. Possible values are
+I<marcxml> (the default), I<marc> (MARC21 binary), and I<json>
+(MARC-in-JSON).
+
+=item B<--file> I<filename>
+
+Read the RDF graph from a file in the specified format.
+
+=item B<--url> I<url>
+
+Read the RDF graph from a URL. If the B<--input> option is specified,
+will attempt to parse using the specified parser, otherwise will
+attempt to guess the appropriate parser using content negotiation.
+
+=back
+
+=cut
+
+my $help = 0;
+my $input = '';
+my $output = 'marcxml';
+my $file = '';
+my $url = '';
+
+GetOptions(
+           'help|?' => \$help,
+           'input=s' => \$input,
+           'output=s' => \$output,
+           'file=s' => \$file,
+           'url=s' => \$url
+          ) or pod2usage( -exitval => 2, -verbose => 1 );
+
+pod2usage( -exitval => 1, -verbose => 1 ) if $help;
+
+$input = 'rdfxml' unless ($input || $url);
+
+__END__
+
+=head1 AUTHOR
+
+Wayne Schneider, C<< <wayne at indexdata.com> >>
+
+=head1 LICENSE
+
+As a work of the United States government, this project is in the
+public domain within the United States.
+
+Additionally, we waive copyright and related rights in the work
+worldwide through the CC0 1.0 Universal public domain dedication.
+
+L<Legal Code (read the full
+text)|https://creativecommons.org/publicdomain/zero/1.0/legalcode>.
+
+You can copy, modify, distribute and perform the work, even for
+commercial purposes, all without asking permission.
+
+=cut
