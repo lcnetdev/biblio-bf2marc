@@ -98,6 +98,8 @@ support alternate MARC serializations.
 
 =item * L<XML::LibXSLT>
 
+=item * L<List::Util>
+
 =item * L<File::ShareDir>
 
 =back
@@ -130,14 +132,14 @@ my %rev_namespaces = reverse(%namespaces);
 
 Constructor for BF2MARC converter. Can take an L<RDF::Trine::Model> as
 the single parameter, or the model can be set later using the
-C<<model>> accessor. Will croak if the model parameter is not an
+C<model> accessor. Will croak if the model parameter is not an
 L<RDF::Trine::Model> object.
 
 The constructor will attempt to set the converter stylesheet to the
 default bibframe2marc.xsl in the module directory. If the stylesheet
 can't be loaded, it log a warning, and the object will be returned
 without a stylesheet property. The stylesheet can also be set manually
-using the C<<stylesheet>> method.
+using the C<stylesheet> method.
 
 =cut
 
@@ -153,7 +155,7 @@ sub new {
     if ($model) {
         $self->model($model);
     }
-    my $stylesheet_file = dist_file(__PACKAGE__,'bibframe2marc.xsl');
+    my $stylesheet_file = dist_file('Biblio-BF2MARC','bibframe2marc.xsl');
     if (-r $stylesheet_file) {
         my $style_doc = eval { XML::LibXML->load_xml( location => $stylesheet_file, no_cdata => 1 ) };
         warn "Unable to load default stylesheet $stylesheet_file: $@" if $@;
@@ -259,7 +261,7 @@ objects.
 
 =over 4
 
-=item * C<<dereference => \%classes>>: A hashref of classes with the
+=item * C<< dereference => \%classes >>: A hashref of classes with the
 class IRI as key and an arrayref of URL prefixes as the value which
 should be dereferenced by URI and their retrieved properties added to
 the element. The default behavior is not to dereference any URIs.
@@ -425,7 +427,7 @@ continue to add on stripes to the element. A recursion check
 is in place to ensure that stripes cannot go infinitely deep.
 
 Literal objects add attributes to the property for C<<xml:lang>>
-and C<<rdf:datatype>>, if appropriate.
+and C<rdf:datatype>, if appropriate.
 
 Will croak with invalid option format, carp with unknown option.
 
@@ -433,7 +435,7 @@ Will croak with invalid option format, carp with unknown option.
 
 =over 4
 
-=item * C<<dereference => \%classes>>: A hashref of classes with the
+=item * C<< dereference => \%classes >>: A hashref of classes with the
 class IRI as key and an arrayref of URL prefixes as the value which
 should be dereferenced by URI and their retrieved properties added to
 the element. The default behavior is not to dereference any URIs.

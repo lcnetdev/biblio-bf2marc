@@ -11,12 +11,23 @@ converter returns MARCXML as XML::LibXML objects, which can in turn be
 converted into MARC::Record objects to support alternate MARC
 serializations.
 
+DEPENDENCIES
+
+* RDF::Trine
+* RDF::Query
+* XML::LibXML
+* XML::LibXSLT
+* List::Util
+* File::ShareDir
+
 INSTALLATION
 
 To install this module, run the following commands:
 
   git clone --recursive https://github.com/lcnetdev/biblio-bf2marc # this repo
   cd biblio-bf2marc
+  # Optional: update XSL conversion
+  git submodule update --remote
   perl Build.PL
 	./Build
 	./Build test
