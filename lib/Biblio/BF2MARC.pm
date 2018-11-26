@@ -4,7 +4,6 @@ use 5.010000;
 use strict;
 use warnings;
 use Carp qw(carp croak);
-use Data::Dumper;
 
 =head1 NAME
 
