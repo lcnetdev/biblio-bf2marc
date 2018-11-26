@@ -12,9 +12,8 @@ Biblio::BF2MARC.
 
 =head1 SYNOPSIS
 
-S<C<# Load an RDF/XML file from STDIN, write as MARCXML to STDOUT>>
-S<C<< bibframe2marc [B<--input> I<rdfxml> B<--output>
-I<marcxml>] < bibframe-rdf.xml > marc.xml >>>
+    # Load an RDF/XML file from STDIN, write as MARCXML to STDOUT
+    bibframe2marc --input rdfxml --output marcxml < bibframe-rdf.xml > marc.xml
 
 =head1 DEPENDENCIES
 
@@ -26,7 +25,7 @@ I<marcxml>] < bibframe-rdf.xml > marc.xml >>>
 
 =item L<MARC::File::XML>
 
-=item L<MARC::Record::MiJ>
+=item L<MARC::Record::MiJ> (optional, for MARC-in-JSON support)
 
 =back
 
@@ -43,10 +42,6 @@ BEGIN {
   if ($@) {
     die "MARC::File::XML module required!\n";
   }
-  eval { require MARC::Record::MiJ };
-  if ($@) {
-    die "MARC::Record::MiJ module required!\n";
-  }
 }
 
 use Biblio::BF2MARC;
@@ -56,6 +51,14 @@ use MARC::Record;
 use MARC::File::XML;
 use Getopt::Long;
 use Pod::Usage;
+use List::Util qw(none);
+
+my $mij = 1;
+eval { require MARC::Record::MiJ };
+if ($@) {
+    warn "No MARC-in-JSON support";
+    $mij = 0;
+}
 
 =head1 OPTIONS
 
@@ -75,7 +78,8 @@ default), I<turtle>, I<ntriples>, I<"RDF/JSON">, and I<trig>.
 
 Set the output format for the MARC data. Possible values are
 I<marcxml> (the default), I<marc> (MARC21 binary), and I<json>
-(MARC-in-JSON).
+(MARC-in-JSON). MARC-in-JSON is only supported if you have
+L<MARC::Record::JSON> installed.
 
 =item B<--file> I<filename>
 
@@ -108,6 +112,23 @@ GetOptions(
 pod2usage( -exitval => 1, -verbose => 1 ) if $help;
 
 $input = 'rdfxml' unless ($input || $url);
+
+if ($output eq 'json') {
+    die "To enable MARC-in-JSON support, install MARC::Record::JSON\n"
+      unless $mij;
+}
+
+# Valid input formats
+my @valid_input = qw(rdfxml turtle ntripes RDF/JSON trig);
+if (none { $_ eq $input } @valid_input) {
+    die 'Invalid input format. Valid formats are: ' . join(' ', @valid_input) . "\n";
+}
+
+# Valid output formats
+my @valid_output = qw(marcxml marc json);
+if (none { $_ eq $output } @valid_output) {
+    die 'Invalid output format. Valid formats are: ' . join(' ', @valid_output) . "\n";
+}
 
 __END__
 
