@@ -53,13 +53,13 @@ is( eval { $bf2marc->stylesheet($style_doc) }, 1, 'set stylesheet' );
 
 # Descriptions
 $bf2marc = Biblio::BF2MARC->new($model);
-my $descriptions = $bf2marc->descriptions;
-is( @{$descriptions}, 2, 'retrieve descriptions from model' );
-isa_ok( $$descriptions[0], 'Biblio::BF2MARC::Description', 'test description object' );
+my @descriptions = $bf2marc->descriptions;
+is( @descriptions, 2, 'retrieve descriptions from model' );
+isa_ok( $descriptions[0], 'Biblio::BF2MARC::Description', 'test description object' );
 
 # Create a description hash so I know which one I'm dealing with
 my %descriptions;
-foreach my $description (@{$descriptions}) {
+foreach my $description (@descriptions) {
     if ($description->work->uri eq 'http://bibframe.example.org/5226#Work') {
         $descriptions{snoopy} = $description;
     } elsif ($description->work->uri eq 'http://example.org/13600108#Work') {
