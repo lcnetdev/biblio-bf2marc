@@ -4,7 +4,6 @@ use 5.010000;
 use strict;
 use warnings;
 use Carp qw(carp croak);
-use Data::Dumper;
 
 =head1 NAME
 
@@ -40,14 +39,14 @@ our $VERSION = '0.01_01';
     my $style_doc = XML::LibXML->load_xml( location => 'my-bf2marc.xsl', no_cdata => 1 );
     $bf2marc->stylesheet($style_doc);
 
-    # return BIBFRAME descriptions as an arrayref
+    # return BIBFRAME descriptions as an array
     # each entry represents a BIBFRAME description (work + instance)
-    my $descriptions = $bf2marc->descriptions;
+    my @descriptions = $bf2marc->descriptions;
 
     # convert descriptions to striped RDF/XML
     # (XML::LibXML::Document objects for XSLT conversion)
     my @striped_descriptions;
-    foreach my $description (@{$descriptions}) {
+    foreach my $description (@descriptions) {
         push(
           @striped_descriptions,
           $bf2marc->to_striped_xml(
@@ -205,15 +204,12 @@ sub stylesheet {
 
 =head2 descriptions
 
-    $descriptions = $bf2marc->descriptions
+    @descriptions = $bf2marc->descriptions
 
-Returns the BIBFRAME descriptions in the model as an array
-reference. A BIBFRAME description is defined as a pair of bf:Work and
-bf:Instance nodes that refer to one another. Each entry in the array
-reference is a L<Biblio::BF2MARC::Description> object.
-
-If there are no BIBFRAME descriptions in the model, returns an empty
-array reference.
+Returns the BIBFRAME descriptions in the model as an array. A BIBFRAME
+description is defined as a pair of bf:Work and bf:Instance nodes that
+refer to one another. Each entry in the array is a
+L<Biblio::BF2MARC::Description> object.
 
 This method will return only resource nodes (not blank nodes).
 
@@ -233,17 +229,17 @@ WHERE
 END
     my $query = RDF::Query->new($sparql);
     my $query_iterator = $query->execute($self->model);
-    my $descriptions = [];
+    my @descriptions;
     while (my $result = $query_iterator->next) {
         if ($$result{work}->is_resource && $$result{instance}->is_resource) {
             my $description = Biblio::BF2MARC::Description->new(
                 work => $$result{work},
                 instance => $$result{instance}
             );
-            push(@{$descriptions}, $description);
+            push(@descriptions, $description);
         }
     }
-    return $descriptions;
+    return @descriptions;
 }
 
 =head2 to_striped_xml

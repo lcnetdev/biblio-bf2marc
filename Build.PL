@@ -26,6 +26,10 @@ my $builder = Module::Build->new(
         'File::Share' => '0',
         'List::Util' => '0'
     },
+    recommends => {
+        'MARC::Record' => '2',
+        'MARC::File::XML' => '1'
+    },
     share_dir => 'share',
     add_to_cleanup     => [ 'Biblio-BF2MARC-*', 'share/bibframe2marc.xsl' ]
 );

@@ -1,0 +1,298 @@
+#!perl
+
+use 5.010000;
+use strict;
+use warnings;
+$| = 1;
+use Data::Dumper; # TODO: only for debugging!
+
+=head1 NAME
+
+bibframe2marc - convert from BIBFRAME RDF to MARC using
+Biblio::BF2MARC.
+
+
+=head1 SYNOPSIS
+
+    # Load an RDF/XML file, write as MARCXML
+    bibframe2marc --from rdfxml --to marcxml --input bibframe-rdf.xml --output marc.xml
+
+=head1 DEPENDENCIES
+
+=over 4
+
+=item L<Biblio::BF2MARC> (of which this script is a part)
+
+=item L<MARC::Record>
+
+=item L<MARC::File::XML>
+
+=back
+
+=cut
+
+BEGIN {
+  # These are required for the command line tool, but not for the
+  # Biblio::BF2MARC module
+  eval { require MARC::Record };
+  if ($@) {
+    die "MARC::Record module required!\n";
+  }
+  eval { require MARC::File::XML };
+  if ($@) {
+    die "MARC::File::XML module required!\n";
+  }
+}
+
+use Biblio::BF2MARC;
+use RDF::Trine;
+use XML::LibXML;
+use MARC::Record;
+use MARC::File::XML ( BinaryEncoding => 'utf8' );
+use Getopt::Long;
+use Pod::Usage;
+use List::Util qw(none);
+use JSON;
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-?|--help>
+
+Prints a brief help message and exits.
+
+=item B<-f|--from> I<"input format">
+
+Set the input format of the incoming RDF graph. Required when loading
+data from STDIN or from a file. Possible values are I<rdfxml> (the
+default), I<turtle>, I<ntriples>, I<"RDF/JSON">, and I<trig>.
+
+=item B<-t|--to> I<"output format">
+
+Set the output format for the MARC data. Possible values are
+I<marcxml> (the default) and I<marc> (MARC binary).
+
+=item B<-i|--input> I<filename>|I<url>
+
+Read an RDF graph from a file or URL in the specified format. Repeat
+to process multiple graphs. All files should have the same input
+format (see B<--from> above). For URLs, the parser will attempt to
+guess the appropriate format using content negotiation, falling back
+to the format specified by B<--from>.
+
+The B<--input> option is required.
+
+=item B<-o|--output> I<filename>
+
+Write the MARCXML collection to a file. Defaults to C<marc.xml> or
+C<marc.mrc> depending on the output format (see B<--to> above). Output
+is always UTF-8 encoded.
+
+=item B<-c|--config> I<filename>
+
+Configuration for dereferencing URIs in the RDF graph comes from the
+configuration file. The configuration file is a JSON file with an
+object that uses the same structure as the options to the
+C<to_striped_xml> method of the L<Biblio::BF2MARC> object:
+
+    {
+      "dereference": {
+        "http://id.loc.gov/ontologies/bibframe/Agent": [
+          "http://id.loc.gov"
+        ]
+      }
+    }
+
+The only configuration option available at this time is
+C<dereference>. It takes an object with a key that is the IRI of the
+class that you want dereferenced, and a value that is an array of
+prefixes which, if matched in the IRI of the RDF object, can be used
+to look up the RDF object and add triples into the model for
+parsing. The configuration above will dereference the object of a
+triple in a graph that looks like this:
+
+    @prefix bf: <http://id.loc.gov/ontologies/bibframe/> .
+    @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+    <http://id.loc.gov/authorities/names/n78095332> <rdf:type> <bf:Agent> .
+    _:Contribution <bf:agent> <http://id.loc.gov/authorities/names/n78095332> .
+
+If there is no configuration file, no URIs will be dereferenced.
+
+=item B<-v|--verbose>
+
+Chat quite a bit about what's going on.
+
+=back
+
+=cut
+
+my $help = 0;
+my $from = '';
+my $to = 'marcxml';
+my @input;
+my $output;
+my $config = '';
+my $verbose = 0;
+
+
+# TODO: add URI dereferencing configuration
+
+GetOptions(
+           'help|?' => \$help,
+           'from=s' => \$from,
+           'to=s' => \$to,
+           'input=s' => \@input,
+           'output=s' => \$output,
+           'config=s' => \$config,
+           'verbose' => \$verbose
+          ) or pod2usage( -exitval => 2, -verbose => 1 );
+
+pod2usage( -exitval => 1, -verbose => 1 ) if $help;
+pod2usage( -exitval => 2, -verbose => 1 ) unless @input;
+
+$from = 'rdfxml' unless $from;
+
+# Valid input formats
+my @valid_from = qw(rdfxml turtle ntripes RDF/JSON trig);
+if (none { $_ eq $from } @valid_from) {
+    die 'Invalid input format. Valid formats are: ' . join(' ', @valid_from) . "\n";
+}
+
+# Valid output formats
+my @valid_to = qw(marcxml marc);
+if (none { $_ eq $to } @valid_to) {
+    die 'Invalid output format. Valid formats are: ' . join(' ', @valid_to) . "\n";
+}
+
+# Parse the config file into a hashref
+my $config_ref = { };
+if ($config) {
+    open(my $config_fh, '<:encoding(UTF-8)', $config)
+      or die "Can't open config file $config: $!\n";
+    my $config_json = join("\n",<$config_fh>);
+    close($config_fh);
+    $config_ref = eval { decode_json($config_json) };
+    if ($@) {
+        die "Error parsing config file: $@\n";
+    }
+}
+
+# Get the input, parse into RDF::Trine::Model
+my $model = RDF::Trine::Model->temporary_model;
+foreach my $input (@input) {
+    print "Loading $input..." if $verbose;
+    if ($input =~ /^[a-z][a-z0-9+\-.]*:/) {
+        eval { RDF::Trine::Parser->parse_url_into_model($input, $model) };
+        if ($@) {
+            warn "Unable to parse $input: $@ ...Trying again with default parser.\n";
+            my $default_parser = RDF::Trine::Parser->new($from);
+            eval { $default_parser->parse_url_into_model($input, $model) };
+            if ($@) {
+                warn "Default parser failed: $@ ...Skipping $input.\n";
+            } else {
+                say "loaded" if $verbose;
+            }
+        } else {
+            say "loaded" if $verbose;
+        }
+    } else {
+        my $file_parser = RDF::Trine::Parser->new($from);
+        if (-r $input) {
+            open(my $in, '<:encoding(UTF-8)', $input);
+            eval { $file_parser->parse_file_into_model(undef, $in, $model) };
+            if ($@) {
+                warn "Parser failed: $@ ...Skipping $input.\n";
+            } else {
+                say "loaded" if $verbose;
+            }
+        } else {
+            warn "Can't read file for input. Skipping $input.\n";
+        }
+    }
+}
+
+# Create the converter, retrieve the descriptions from the model
+my $bf2marc = Biblio::BF2MARC->new($model);
+my @descriptions = $bf2marc->descriptions;
+say @descriptions . " description(s) loaded." if $verbose;
+
+# Convert into MARCXML (XML::LibXML documents)
+my @collection;
+foreach my $description (@descriptions) {
+    my $work_uri = $description->work->uri;
+    my $instance_uri = $description->instance->uri;
+    print "Converting $work_uri | $instance_uri..." if $verbose;
+    my $marcxml;
+    say $bf2marc->to_striped_xml($description, $config_ref)->toString(1);
+    eval { $marcxml = $bf2marc->convert($bf2marc->to_striped_xml($description, $config_ref)) };
+    if ($@) {
+        warn "Unable to convert BF description ($work_uri | $instance_uri): $@\n";
+        next;
+    }
+    if ($marcxml) {
+        push(@collection, $marcxml);
+        say "converted" if $verbose;
+    } else {
+        warn "No conversion for $work_uri/$instance_uri\n";
+    }
+}
+
+# Convert into MARC::Record objects
+my @marc_collection;
+foreach my $marcxml (@collection) {
+    my $record = eval { MARC::Record->new_from_xml($marcxml->toString, 'UTF-8') };
+    if ($@) {
+        warn "Error creating MARC record: $@\n"
+    } else {
+        push(@marc_collection, $record);
+    }
+}
+
+if ($to eq 'marcxml') {
+    $output = 'marc.xml' unless $output;
+    print "Writing output to $output..." if $verbose;
+    my $xml_file;
+    eval { $xml_file = MARC::File::XML->out($output) };
+    if ($@) {
+        die "Can't open output file $output: $@\n";
+    }
+    foreach my $record (@marc_collection) {
+        $xml_file->write($record);
+    }
+    say "done" if $verbose;
+} else {
+    $output = 'marc.mrc' unless $output;
+    print "Writing output to $output..." if $verbose;
+    open(my $out, '>:encoding(UTF-8)', $output)
+      or die "Can't open output file $output: $!\n";
+    foreach my $record (@marc_collection) {
+        print $out $record->as_usmarc;
+    }
+    close($out);
+    say "done" if $verbose;
+}
+
+exit;
+
+__END__
+
+=head1 AUTHOR
+
+Wayne Schneider, C<< <wayne at indexdata.com> >>
+
+=head1 LICENSE
+
+As a work of the United States government, this project is in the
+public domain within the United States.
+
+Additionally, we waive copyright and related rights in the work
+worldwide through the CC0 1.0 Universal public domain dedication.
+
+L<Legal Code (read the full
+text)|https://creativecommons.org/publicdomain/zero/1.0/legalcode>.
+
+You can copy, modify, distribute and perform the work, even for
+commercial purposes, all without asking permission.
+
+=cut
