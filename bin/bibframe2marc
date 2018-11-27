@@ -4,7 +4,6 @@ use 5.010000;
 use strict;
 use warnings;
 $| = 1;
-use Data::Dumper; # TODO: only for debugging!
 
 =head1 NAME
 
@@ -135,8 +134,6 @@ my $output;
 my $config = '';
 my $verbose = 0;
 
-
-# TODO: add URI dereferencing configuration
 
 GetOptions(
            'help|?' => \$help,
