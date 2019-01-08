@@ -151,7 +151,7 @@ pod2usage( -exitval => 2, -verbose => 1 ) unless @input;
 $from = 'rdfxml' unless $from;
 
 # Valid input formats
-my @valid_from = qw(rdfxml turtle ntripes RDF/JSON trig);
+my @valid_from = qw(rdfxml turtle ntriples RDF/JSON trig);
 if (none { $_ eq $from } @valid_from) {
     die 'Invalid input format. Valid formats are: ' . join(' ', @valid_from) . "\n";
 }
@@ -219,9 +219,8 @@ my @collection;
 foreach my $description (@descriptions) {
     my $work_uri = $description->work->uri;
     my $instance_uri = $description->instance->uri;
-    print "Converting $work_uri | $instance_uri..." if $verbose;
+    say "Converting $work_uri | $instance_uri:\n" . $bf2marc->to_striped_xml($description, $config_ref)->toString(1) if $verbose;
     my $marcxml;
-    say $bf2marc->to_striped_xml($description, $config_ref)->toString(1);
     eval { $marcxml = $bf2marc->convert($bf2marc->to_striped_xml($description, $config_ref)) };
     if ($@) {
         warn "Unable to convert BF description ($work_uri | $instance_uri): $@\n";
