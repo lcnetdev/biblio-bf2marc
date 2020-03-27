@@ -162,8 +162,10 @@ SKIP: {
     my $xpc = XML::LibXML::XPathContext->new($deref_prop);
     $xpc->registerNs('bf', 'http://id.loc.gov/ontologies/bibframe/');
     $xpc->registerNs('madsrdf', 'http://www.loc.gov/mads/rdf/v1#');
+    my $label = eval { $xpc->findvalue('bf:Agent/madsrdf:authoritativeLabel') };
+    warn $@ if ($@);
     is(
-       $xpc->findvalue('bf:Agent/madsrdf:authoritativeLabel'),
+       $label,
        'Shakespeare, William, 1564-1616',
        'dereference madsrdf IRI'
       );
@@ -203,9 +205,15 @@ SKIP: {
     $xpc->registerNs('bf', 'http://id.loc.gov/ontologies/bibframe/');
     $xpc->registerNs('rdf', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#');
     $xpc->registerNs('madsrdf', 'http://www.loc.gov/mads/rdf/v1#');
-    my $adminMetadata = $xpc->findnodes('//madsrdf:adminMetadata');
+    my $adminMetadata = eval { $xpc->findnodes('//madsrdf:adminMetadata') };
+    warn $@ if ($@);
+    my $size = eval { $adminMetadata->size };
+    if ($@) {
+        warn $@;
+        $size = 0;
+    }
     cmp_ok(
-           $adminMetadata->size,
+           $size,
            '>',
            0,
            'dereference madsrdf IRI'
