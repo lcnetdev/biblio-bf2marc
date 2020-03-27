@@ -105,6 +105,15 @@ support alternate MARC serializations.
 
 =cut
 
+# Avoid Redland parser due to issues with IRI encoding
+# Unfortunate for performance
+# For some reason these use statements need to come before RDF::Trine
+use RDF::Trine::Parser::RDFXML;
+use RDF::Trine::Parser::RDFa;
+use RDF::Trine::Parser::NTriples;
+use RDF::Trine::Parser::Turtle;
+use RDF::Trine::Parser::TriG;
+
 use RDF::Trine;
 use RDF::Query;
 use XML::LibXML;
@@ -530,7 +539,15 @@ sub _build_property {
                            ) {
                             foreach my $prefix (@{$prefixes}) {
                                 if ($node->uri =~ /^$prefix/) {
-                                    RDF::Trine::Parser->parse_url_into_model($node->uri, $self->model);
+                                    eval { RDF::Trine::Parser->parse_url_into_model( $node->uri, $self->model ); };
+                                    if ($@) {
+                                        carp 'Unable to dereference IRI ' .
+                                          $node->uri .
+                                          ' in statement ' .
+                                          $st->as_string() .
+                                          ': ' .
+                                          $@;
+                                    }
                                     push(@{$$self{dereferenced}}, $node->uri);
                                     last;
                                 }
@@ -592,7 +609,8 @@ sub _build_property {
                         $self_ref->setAttributeNS($namespaces{rdf}, 'rdf:resource', $prop_st->object->uri);
                         $stripe->addChild($self_ref);
                     } else {
-                        $stripe->addChild($self->_build_property($prop_st, $options, @subjects));
+                        eval { $stripe->addChild($self->_build_property($prop_st, $options, @subjects)) };
+                        carp $@ if ($@);
                     }
                 }
                 $property->addChild($stripe);
