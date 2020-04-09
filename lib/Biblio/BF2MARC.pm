@@ -270,6 +270,7 @@ objects.
 class IRI as key and an arrayref of URL prefixes as the value which
 should be dereferenced by URI and their retrieved properties added to
 the element. The default behavior is not to dereference any URIs.
+Note that dereferenced content is assumed to be UTF-8 encoded.
 
 =back
 
@@ -530,6 +531,15 @@ sub _build_property {
 
             # dereference resources, add to model
             if ($dereference && $node->is_resource) {
+                # We are only going to deal with UTF-8 when dereferencing. Servers that
+                # send other encodings for RDF will likely result in weird output
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::RDFXML' } = 'utf8';
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::RDFa' } = 'utf8';
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::NTriples' } = 'utf8';
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::TriG' } = 'utf8';
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::RDFJSON' } = 'utf8';
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::NQuads' } = 'utf8';
+                local $RDF::Trine::Parser::encodings{ 'RDF::Trine::Parser::Redland' } = 'utf8';
                 while (my ($class, $prefixes) = each(%{$dereference})) {
                     foreach my $type (@types) {
                         if (
