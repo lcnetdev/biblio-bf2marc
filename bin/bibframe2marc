@@ -148,6 +148,9 @@ GetOptions(
 pod2usage( -exitval => 1, -verbose => 1 ) if $help;
 pod2usage( -exitval => 2, -verbose => 1 ) unless @input;
 
+binmode(STDOUT, ':utf8') if $verbose;
+say "Using $Biblio::BF2MARC::VERSION" if $verbose;
+
 $from = 'rdfxml' unless $from;
 
 # Valid input formats
@@ -241,7 +244,9 @@ foreach my $description (@descriptions) {
 # Convert into MARC::Record objects
 my @marc_collection;
 foreach my $marcxml (@collection) {
-    my $record = eval { MARC::Record->new_from_xml($marcxml->toString, 'UTF-8') };
+    # XML document needs to be canonicalized for Unicode consistency
+    say $marcxml->toStringC14N() if $verbose;
+    my $record = eval { MARC::Record->new_from_xml($marcxml->toStringC14N, 'UTF-8') };
     if ($@) {
         warn "Error creating MARC record: $@\n"
     } else {
