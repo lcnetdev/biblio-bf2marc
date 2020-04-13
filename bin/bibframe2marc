@@ -2,7 +2,7 @@
 
 use 5.010000;
 use strict;
-use warnings;
+use warnings qw(FATAL utf8);
 $| = 1;
 
 =head1 NAME
@@ -52,6 +52,7 @@ use Getopt::Long;
 use Pod::Usage;
 use List::Util qw(none);
 use JSON;
+use IO::Select;
 
 =head1 OPTIONS
 
@@ -80,13 +81,14 @@ format (see B<--from> above). For URLs, the parser will attempt to
 guess the appropriate format using content negotiation, falling back
 to the format specified by B<--from>.
 
-The B<--input> option is required.
+If the B<--input> option is omitted, the application will look for
+input on C<STDIN>.
 
 =item B<-o|--output> I<filename>
 
-Write the MARCXML collection to a file. Defaults to C<marc.xml> or
-C<marc.mrc> depending on the output format (see B<--to> above). Output
-is always UTF-8 encoded.
+Write the MARCXML collection to the specified file. If B<--output> is
+omitted, output will be written to C<STDOUT>. Output is always UTF-8
+encoded.
 
 =item B<-c|--config> I<filename>
 
@@ -146,10 +148,12 @@ GetOptions(
           ) or pod2usage( -exitval => 2, -verbose => 1 );
 
 pod2usage( -exitval => 1, -verbose => 1 ) if $help;
-pod2usage( -exitval => 2, -verbose => 1 ) unless @input;
 
-binmode(STDOUT, ':utf8') if $verbose;
-say "Using $Biblio::BF2MARC::VERSION" if $verbose;
+binmode(STDIN, ':encoding(UTF-8)');
+binmode(STDOUT, ':encoding(UTF-8)');
+binmode(STDERR, ':utf8');
+
+warn "Using $Biblio::BF2MARC::VERSION\n" if $verbose;
 
 $from = 'rdfxml' unless $from;
 
@@ -180,55 +184,71 @@ if ($config) {
 
 # Get the input, parse into RDF::Trine::Model
 my $model = RDF::Trine::Model->temporary_model;
-foreach my $input (@input) {
-    print "Loading $input..." if $verbose;
-    if ($input =~ /^[a-z][a-z0-9+\-.]*:/) {
-        eval { RDF::Trine::Parser->parse_url_into_model($input, $model) };
-        if ($@) {
-            warn "Unable to parse $input: $@ ...Trying again with default parser.\n";
-            my $default_parser = RDF::Trine::Parser->new($from);
-            eval { $default_parser->parse_url_into_model($input, $model) };
+if (@input) {
+    foreach my $input (@input) {
+        warn "Loading $input..." if $verbose;
+        if ($input =~ /^[a-z][a-z0-9+\-.]*:/) {
+            eval { RDF::Trine::Parser->parse_url_into_model($input, $model) };
             if ($@) {
-                warn "Default parser failed: $@ ...Skipping $input.\n";
+                warn "Unable to parse $input: $@ ...Trying again with default parser.\n";
+                my $default_parser = RDF::Trine::Parser->new($from);
+                eval { $default_parser->parse_url_into_model($input, $model) };
+                if ($@) {
+                    warn "Default parser failed: $@ ...Skipping $input.\n";
+                } else {
+                    warn "loaded\n" if $verbose;
+                }
             } else {
-                say "loaded" if $verbose;
+                warn "loaded\n" if $verbose;
             }
         } else {
-            say "loaded" if $verbose;
+            my $file_parser = RDF::Trine::Parser->new($from);
+            if (-r $input) {
+                open(my $in, '<:encoding(UTF-8)', $input);
+                eval { $file_parser->parse_file_into_model(undef, $in, $model) };
+                if ($@) {
+                    warn "Parser failed: $@ ...Skipping $input.\n";
+                } else {
+                    warn "loaded\n" if $verbose;
+                }
+            } else {
+                warn "Can't read file for input. Skipping $input.\n";
+            }
+        }
+    }
+} else {
+    my $stdin_parser = RDF::Trine::Parser->new($from);
+    my $select = IO::Select->new();
+    $select->add(\*STDIN);
+    if ($select->can_read(.5)) {
+        local $/;
+        my $rdf_stdin = <STDIN>;
+        eval { $stdin_parser->parse_into_model(undef, $rdf_stdin, $model) };
+        if ($@) {
+            die "Parser failed: $@\n";
         }
     } else {
-        my $file_parser = RDF::Trine::Parser->new($from);
-        if (-r $input) {
-            open(my $in, '<:encoding(UTF-8)', $input);
-            eval { $file_parser->parse_file_into_model(undef, $in, $model) };
-            if ($@) {
-                warn "Parser failed: $@ ...Skipping $input.\n";
-            } else {
-                say "loaded" if $verbose;
-            }
-        } else {
-            warn "Can't read file for input. Skipping $input.\n";
-        }
+        die "No input to parser\n";
     }
 }
 
 # Create the converter, retrieve the descriptions from the model
 my $bf2marc = Biblio::BF2MARC->new($model);
 my @descriptions = $bf2marc->descriptions;
-say @descriptions . " description(s) loaded." if $verbose;
+warn @descriptions . " description(s) loaded.\n" if $verbose;
 
 # Convert into MARCXML (XML::LibXML documents)
 my @collection;
 foreach my $description (@descriptions) {
     my $work_uri = $description->work->uri;
     my $instance_uri = $description->instance->uri;
-    say "Converting $work_uri | $instance_uri" if $verbose;
+    warn "Converting $work_uri | $instance_uri\n" if $verbose;
     my $striped_xml = eval { $bf2marc->to_striped_xml($description, $config_ref) };
     if ($@) {
         warn "Unable to convert BF description ($work_uri | $instance_uri): $@\n";
         next;
     }
-    say $striped_xml->toString(1) if $verbose;
+    warn $striped_xml->toString(1) . "\n" if $verbose;
     my $marcxml = eval { $bf2marc->convert($striped_xml) };
     if ($@) {
         warn "Unable to convert BF description ($work_uri | $instance_uri): $@\n";
@@ -245,7 +265,7 @@ foreach my $description (@descriptions) {
 my @marc_collection;
 foreach my $marcxml (@collection) {
     # XML document needs to be canonicalized for Unicode consistency
-    say $marcxml->toStringC14N() if $verbose;
+    warn $marcxml->toStringC14N() . "\n" if $verbose;
     my $record = eval { MARC::Record->new_from_xml($marcxml->toStringC14N, 'UTF-8') };
     if ($@) {
         warn "Error creating MARC record: $@\n"
@@ -254,29 +274,27 @@ foreach my $marcxml (@collection) {
     }
 }
 
-if ($to eq 'marcxml') {
-    $output = 'marc.xml' unless $output;
-    print "Writing output to $output..." if $verbose;
-    my $xml_file;
-    eval { $xml_file = MARC::File::XML->out($output) };
-    if ($@) {
-        die "Can't open output file $output: $@\n";
-    }
-    foreach my $record (@marc_collection) {
-        $xml_file->write($record);
-    }
-    say "done" if $verbose;
-} else {
-    $output = 'marc.mrc' unless $output;
-    print "Writing output to $output..." if $verbose;
-    open(my $out, '>:encoding(UTF-8)', $output)
+# Output MARC
+my $out_fh;
+if ($output) {
+    open($out_fh, '>:encoding(UTF-8)', $output)
       or die "Can't open output file $output: $!\n";
-    foreach my $record (@marc_collection) {
-        print $out $record->as_usmarc;
-    }
-    close($out);
-    say "done" if $verbose;
+    warn "Writing output to $output..." if $verbose;
+} else {
+    $out_fh = *STDOUT
 }
+print $out_fh MARC::File::XML::header() if ($to eq 'marcxml');
+for (my $i = 0; $i < @marc_collection; $i++) {
+    if ($to eq 'marcxml') {
+        print $out_fh MARC::File::XML::record($marc_collection[$i]);
+        print "\n" unless ($i == @marc_collection - 1);
+    } else {
+        print $out_fh $marc_collection[$i]->as_usmarc;
+    }
+}
+print $out_fh MARC::File::XML::footer() . "\n" if ($to eq 'marcxml');
+close($out_fh) if ($output);
+warn "done\n" if ($output && $verbose);
 
 exit;
 
