@@ -1,0 +1,20 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/buildpack-deps:scm
+    steps:
+      - checkout
+      - run:
+          name: Install prerequisites
+          command: |
+            sudo apt-get -q update && sudo apt-get install -qy build-essential cpanminus librdf-trine-perl librdf-query-perl libxml-libxslt-perl libmodule-build-perl libfile-share-perl xsltproc
+            sudo cpanm MARC::Record MARC::File::XML
+      - run:
+          name: Run tests
+          command: |
+            git submodule init
+            git submodule update
+            perl Build.PL
+            ./Build
+            ./Build test
