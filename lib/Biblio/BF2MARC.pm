@@ -77,7 +77,7 @@ our $VERSION = '0.01_01';
 Biblio::BF2MARC provides a library to manage conversion of RDF
 BIBFRAME 2.0 descriptions into MARC records, using an XSLT 1.0
 stylesheet such as the one provided by the
-L<bibframe2marc-xsl|https://github.com/lcnetdev/bibframe2marc-xsl>
+L<bibframe2marc|https://github.com/lcnetdev/bibframe2marc>
 project (included in this distribution as a default). The converter
 object is built on an L<RDF::Trine::Model>, and so can operate on RDF
 graphs in memory, from a file, or from any storage backend supported
@@ -661,8 +661,8 @@ You can find documentation for this module with the perldoc command.
 
 =over 4
 
-=item * L<bibframe2marc-xsl XSLT
-conversion|https://github.com/lcnetdev/bibframe2marc-xsl>
+=item * L<bibframe2marc XSLT
+conversion|https://github.com/lcnetdev/bibframe2marc>
 
 =item * The L<Bibliographic Framework
 Initiative|http://www.loc.gov/bibframe> at the Library of Congress

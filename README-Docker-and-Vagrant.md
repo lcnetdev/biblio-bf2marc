@@ -1,4 +1,6 @@
-# Running bibframe2marc as a container
+# Docker and Vagrant support
+
+## Docker
 
 A [Dockerfile](Dockerfile) is included in this distribution to allow the `bibframe2marc` utility to be built into a Docker image and run as a container for easier portability.
 
@@ -25,3 +27,7 @@ You can also use this strategy to mount a local directory for reading and writin
 If you've built the Docker image, the easiest way to see the command line documentation is to run `bibframe2marc` with the `--help` command line switch:
 
     docker run --rm bibframe2marc --help
+
+## Vagrant
+
+A [Vagrantfile](Vagrantfile) is included as well, for use as a development tool in non-POSIX environments. If you have [Vagrant](https://www.vagrantup.com/) installed, just type `vagrant up` in the root of the repository to get a working Ubuntu 18.04 environment. The repository root will be mounted on the Vagrant VM at `/vagrant`.
