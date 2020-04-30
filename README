@@ -40,6 +40,10 @@ perldoc command.
 
     perldoc Biblio::BF2MARC
 
+Additional information about using this distribution with Docker and
+Vagrant is in the README-Docker-and-Vagrant.md file. Installation
+instructions for various flavors of Linux are in README-install.md.
+
 LICENSE AND COPYRIGHT
 
 As a work of the United States government, this project is in the
