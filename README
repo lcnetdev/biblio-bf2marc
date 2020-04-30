@@ -40,6 +40,9 @@ perldoc command.
 
     perldoc Biblio::BF2MARC
 
+The POD documentation for this module has been converted to MarkDown
+and put in the doc/ directory for convenience.
+
 Additional information about using this distribution with Docker and
 Vagrant is in the README-Docker-and-Vagrant.md file. Installation
 instructions for various flavors of Linux are in README-install.md.
