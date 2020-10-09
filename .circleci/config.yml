@@ -1,6 +1,6 @@
 version: 2.1
 workflows:
-  bibframe2marc-xspec-tests:
+  biblio-bf2marc-test:
     jobs:
       - build:
           context:
